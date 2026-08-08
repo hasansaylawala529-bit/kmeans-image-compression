@@ -11,24 +11,8 @@ import time
 
 def initialize_centroids(pixels, k):
     """
-    Initialise k centroids by randomly sampling k unique pixels.
-
-    Uses K-Means++ inspired seeding: first centroid is random,
-    subsequent centroids are chosen proportional to squared distance
-    from the nearest existing centroid. This gives better convergence
-    than pure random initialisation.
-
-    Parameters
-    ----------
-    pixels : np.ndarray, shape (n_pixels, 3)
-        Flattened image pixels in RGB.
-    k : int
-        Number of clusters.
-
-    Returns
-    -------
-    centroids : np.ndarray, shape (k, 3)
-        Initial centroid positions.
+    Initialise k centroids using incremental K-Means++ seeding.
+    Fast O(N) update per iteration tracking minimum distance so far.
     """
     n_pixels = pixels.shape[0]
     centroids = np.empty((k, 3), dtype=np.float64)
@@ -37,23 +21,25 @@ def initialize_centroids(pixels, k):
     idx = np.random.randint(0, n_pixels)
     centroids[0] = pixels[idx]
 
-    for i in range(1, k):
-        # Compute squared distances from each pixel to the nearest centroid so far
-        diffs = pixels[:, np.newaxis, :] - centroids[np.newaxis, :i, :]  # (n, i, 3)
-        sq_dists = np.sum(diffs ** 2, axis=2)  # (n, i)
-        min_sq_dists = np.min(sq_dists, axis=1)  # (n,)
+    # Track minimum squared distance from each pixel to any centroid so far
+    min_sq_dists = np.sum((pixels - centroids[0]) ** 2, axis=1)
 
-        # Choose next centroid with probability proportional to sq distance
+    for i in range(1, k):
         total_dist = min_sq_dists.sum()
         if total_dist > 0:
             probabilities = min_sq_dists / total_dist
         else:
             probabilities = np.ones(n_pixels) / n_pixels
+
         cumulative = np.cumsum(probabilities)
         r = np.random.random()
         idx = np.searchsorted(cumulative, r)
         idx = min(idx, n_pixels - 1)
         centroids[i] = pixels[idx]
+
+        # Incremental update: update min_sq_dists with distance to the newly picked centroid
+        new_dists = np.sum((pixels - centroids[i]) ** 2, axis=1)
+        min_sq_dists = np.minimum(min_sq_dists, new_dists)
 
     return centroids
 
@@ -61,20 +47,8 @@ def initialize_centroids(pixels, k):
 def assign_clusters(pixels, centroids):
     """
     Assign each pixel to the nearest centroid using Euclidean distance.
-
-    Parameters
-    ----------
-    pixels : np.ndarray, shape (n_pixels, 3)
-    centroids : np.ndarray, shape (k, 3)
-
-    Returns
-    -------
-    labels : np.ndarray, shape (n_pixels,)
-        Cluster index for each pixel.
+    Vectorised matrix dot product formulation.
     """
-    # Vectorised: compute distance from every pixel to every centroid
-    # Using the expansion: ||a - b||^2 = ||a||^2 - 2*a·b + ||b||^2
-    # This avoids creating a huge (n_pixels, k, 3) intermediate array
     pixel_sq = np.sum(pixels ** 2, axis=1, keepdims=True)    # (n, 1)
     centroid_sq = np.sum(centroids ** 2, axis=1, keepdims=True)  # (k, 1)
     cross_term = pixels @ centroids.T                         # (n, k)
@@ -87,18 +61,6 @@ def assign_clusters(pixels, centroids):
 def update_centroids(pixels, labels, k):
     """
     Recompute centroids as the mean of all pixels assigned to each cluster.
-
-    If a cluster has no pixels assigned, reinitialise it to a random pixel.
-
-    Parameters
-    ----------
-    pixels : np.ndarray, shape (n_pixels, 3)
-    labels : np.ndarray, shape (n_pixels,)
-    k : int
-
-    Returns
-    -------
-    new_centroids : np.ndarray, shape (k, 3)
     """
     new_centroids = np.empty((k, 3), dtype=np.float64)
 
@@ -107,35 +69,14 @@ def update_centroids(pixels, labels, k):
         if np.any(mask):
             new_centroids[i] = pixels[mask].mean(axis=0)
         else:
-            # Empty cluster — reinitialise to a random pixel
             new_centroids[i] = pixels[np.random.randint(0, pixels.shape[0])]
 
     return new_centroids
 
 
-def kmeans(pixels, k, max_iters=20, tol=1e-4):
+def kmeans(pixels, k, max_iters=15, tol=1e-3):
     """
     Run K-Means clustering on pixel data.
-
-    Parameters
-    ----------
-    pixels : np.ndarray, shape (n_pixels, 3)
-        Normalised pixel values in [0, 1].
-    k : int
-        Number of clusters.
-    max_iters : int
-        Maximum iterations before stopping.
-    tol : float
-        Convergence tolerance — stop when centroid shift is below this.
-
-    Returns
-    -------
-    centroids : np.ndarray, shape (k, 3)
-        Final centroid positions.
-    labels : np.ndarray, shape (n_pixels,)
-        Cluster assignment for each pixel.
-    iterations : int
-        Number of iterations run.
     """
     centroids = initialize_centroids(pixels, k)
 
@@ -143,7 +84,6 @@ def kmeans(pixels, k, max_iters=20, tol=1e-4):
         labels = assign_clusters(pixels, centroids)
         new_centroids = update_centroids(pixels, labels, k)
 
-        # Check convergence: max centroid shift
         shift = np.sqrt(np.sum((new_centroids - centroids) ** 2, axis=1)).max()
         centroids = new_centroids
 
@@ -156,41 +96,23 @@ def kmeans(pixels, k, max_iters=20, tol=1e-4):
 def compress_image(image_array, k):
     """
     Compress an image using K-Means colour quantisation.
-
-    Parameters
-    ----------
-    image_array : np.ndarray, shape (H, W, 3)
-        Original image as uint8 RGB array.
-    k : int
-        Number of colour clusters.
-
-    Returns
-    -------
-    compressed : np.ndarray, shape (H, W, 3)
-        Reconstructed image using only k colours.
-    stats : dict
-        Compression statistics.
     """
     start_time = time.time()
 
     h, w, c = image_array.shape
     total_pixels = h * w
 
-    # Normalise to [0, 1] for numerical stability
     pixels = image_array.reshape(-1, 3).astype(np.float64) / 255.0
 
-    # For large images, find centroids on a subsample then apply to all pixels
-    subsample_threshold = 500_000  # 500k pixels
+    # Subsample threshold for fast centroid discovery (100,000 pixels is plenty for palette learning)
+    subsample_threshold = 100_000
     if total_pixels > subsample_threshold:
-        # Random subsample for centroid discovery
         indices = np.random.choice(total_pixels, subsample_threshold, replace=False)
         sample = pixels[indices]
-        centroids, _, iterations = kmeans(sample, k, max_iters=30)
-
-        # Assign ALL pixels to the discovered centroids
+        centroids, _, iterations = kmeans(sample, k, max_iters=15)
         labels = assign_clusters(pixels, centroids)
     else:
-        centroids, labels, iterations = kmeans(pixels, k, max_iters=30)
+        centroids, labels, iterations = kmeans(pixels, k, max_iters=15)
 
     # Reconstruct: replace each pixel with its centroid colour
     compressed_pixels = centroids[labels]
