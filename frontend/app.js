@@ -303,11 +303,24 @@
 
     // ── Comparison slider ─────────────────────────────
 
-    function initComparison() {
-        var wrap = document.querySelector(".comparison-image-wrap");
-        var isDragging = false;
+    let comparisonInitialized = false;
 
-        function setPosition(x) {
+    function initComparison() {
+        comparisonOverlay.style.width = "50%";
+        comparisonHandle.style.left = "50%";
+
+        var wrap = document.querySelector(".comparison-image-wrap");
+        if (wrap && compressedImage) {
+            compressedImage.style.width = wrap.offsetWidth + "px";
+        }
+
+        if (comparisonInitialized) return;
+        comparisonInitialized = true;
+
+        var dragging = false;
+
+        function setPos(x) {
+            if (!wrap) return;
             var rect = wrap.getBoundingClientRect();
             var pos = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
             var pct = pos * 100;
@@ -315,51 +328,7 @@
             comparisonHandle.style.left = pct + "%";
         }
 
-        function onPointerDown(e) {
-            e.preventDefault();
-            isDragging = true;
-            setPosition(e.clientX || (e.touches && e.touches[0].clientX));
-        }
-
-        function onPointerMove(e) {
-            if (!isDragging) return;
-            e.preventDefault();
-            setPosition(e.clientX || (e.touches && e.touches[0].clientX));
-        }
-
-        function onPointerUp() {
-            isDragging = false;
-        }
-
-        // Remove old listeners by cloning
-        var newWrap = wrap.cloneNode(true);
-        wrap.parentNode.replaceChild(newWrap, wrap);
-
-        // Re-grab references after cloning
-        var freshOverlay = newWrap.querySelector(".comparison-overlay");
-        var freshHandle = newWrap.querySelector(".comparison-handle");
-        var freshOrigImg = newWrap.querySelector("#original-image");
-        var freshCompImg = newWrap.querySelector("#compressed-image");
-
-        // Ensure images are still set
-        if (freshOrigImg && !freshOrigImg.src) {
-            freshOrigImg.src = originalImage.src;
-        }
-        if (freshCompImg && !freshCompImg.src) {
-            freshCompImg.src = compressedImage.src;
-        }
-
-        function setPos(x) {
-            var rect = newWrap.getBoundingClientRect();
-            var pos = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
-            var pct = pos * 100;
-            freshOverlay.style.width = pct + "%";
-            freshHandle.style.left = pct + "%";
-        }
-
-        var dragging = false;
-
-        newWrap.addEventListener("mousedown", function (e) {
+        wrap.addEventListener("mousedown", function (e) {
             e.preventDefault();
             dragging = true;
             setPos(e.clientX);
@@ -375,7 +344,7 @@
             dragging = false;
         });
 
-        newWrap.addEventListener("touchstart", function (e) {
+        wrap.addEventListener("touchstart", function (e) {
             dragging = true;
             setPos(e.touches[0].clientX);
         }, { passive: true });
