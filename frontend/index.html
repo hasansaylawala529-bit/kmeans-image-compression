@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chromatic — Image Colour Compressor</title>
+    <meta name="description" content="Compress images using K-Means colour quantisation. Reduce file sizes while preserving visual quality.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Grain overlay -->
+    <div class="grain" aria-hidden="true"></div>
+
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="logo" id="logo">
+                <span class="logo-mark">◈</span>
+                Chromatic
+            </a>
+            <nav class="header-nav">
+                <span class="nav-tag">Smart Compression</span>
+                <span class="nav-divider">·</span>
+                <span class="nav-tag">Colour Quantisation</span>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <!-- Hero section -->
+        <section class="hero" id="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    Compress images<br>
+                    <em>intelligently.</em>
+                </h1>
+                <p class="hero-subtitle">
+                    Drop an image below and watch K-Means clustering reduce its colour palette 
+                    while keeping what matters. No black box — pure math.
+                </p>
+            </div>
+        </section>
+
+        <!-- Upload section -->
+        <section class="upload-section" id="upload-section">
+            <div class="upload-container">
+                <div class="upload-zone" id="upload-zone" tabindex="0" role="button" aria-label="Upload an image">
+                    <div class="upload-zone-inner">
+                        <div class="upload-icon-wrap">
+                            <svg class="upload-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                        </div>
+                        <p class="upload-text">
+                            <strong>Drop your image here</strong> or click to browse
+                        </p>
+                        <p class="upload-hint">JPEG, PNG, WebP — up to 50 MB</p>
+                    </div>
+                    <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden>
+                </div>
+
+                <!-- Preview after file selected -->
+                <div class="file-preview" id="file-preview" hidden>
+                    <img id="preview-thumb" class="preview-thumb" alt="Selected image preview">
+                    <div class="preview-info">
+                        <p class="preview-name" id="preview-name"></p>
+                        <p class="preview-size" id="preview-size"></p>
+                    </div>
+                    <button class="preview-remove" id="preview-remove" aria-label="Remove selected file">✕</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls section -->
+        <section class="controls-section" id="controls-section" hidden>
+            <div class="controls-container">
+                <div class="controls-card">
+                    <div class="controls-header">
+                        <h2 class="controls-title">Compression</h2>
+                        <div class="k-badge" id="k-badge">k = 16</div>
+                    </div>
+
+                    <div class="slider-group">
+                        <div class="slider-labels">
+                            <span class="slider-label-start">Subtle</span>
+                            <span class="slider-label-end">Aggressive</span>
+                        </div>
+                        <div class="slider-track-wrap">
+                            <input 
+                                type="range" 
+                                id="compression-slider" 
+                                min="5" 
+                                max="98" 
+                                value="50" 
+                                step="1"
+                                class="compression-slider"
+                                aria-label="Compression strength"
+                            >
+                            <div class="slider-fill" id="slider-fill"></div>
+                        </div>
+                        <div class="slider-value-wrap">
+                            <span class="slider-value" id="slider-value">50%</span>
+                            <span class="slider-hint">compression strength</span>
+                        </div>
+                    </div>
+
+                    <div class="algo-info">
+                        <div class="algo-detail">
+                            <span class="algo-label">Colours</span>
+                            <span class="algo-value" id="colour-count">16</span>
+                        </div>
+                        <div class="algo-detail">
+                            <span class="algo-label">Method</span>
+                            <span class="algo-value">K-Means++</span>
+                        </div>
+                    </div>
+
+                    <button class="compress-btn" id="compress-btn">
+                        <span class="compress-btn-text">Compress Image</span>
+                        <span class="compress-btn-loading" hidden>
+                            <span class="spinner"></span>
+                            Processing…
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading section -->
+        <section class="loading-section" id="loading-section" hidden>
+            <div class="loading-container">
+                <div class="loading-card">
+                    <div class="loading-visual">
+                        <div class="loading-dots">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
+                    <p class="loading-message" id="loading-message">Clustering pixels…</p>
+                    <p class="loading-detail">This may take a moment for large images</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results section -->
+        <section class="results-section" id="results-section" hidden>
+            <div class="results-container">
+                <!-- Stats bar -->
+                <div class="stats-bar" id="stats-bar">
+                    <div class="stat-item">
+                        <span class="stat-value" id="stat-reduction">—</span>
+                        <span class="stat-label">Size Reduction</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="stat-colours">—</span>
+                        <span class="stat-label">Colours Used</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="stat-psnr">—</span>
+                        <span class="stat-label">PSNR (dB)</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="stat-time">—</span>
+                        <span class="stat-label">Processing Time</span>
+                    </div>
+                </div>
+
+                <!-- Comparison viewer -->
+                <div class="comparison-wrap">
+                    <h2 class="comparison-title">Before &amp; After</h2>
+                    <div class="comparison-viewer" id="comparison-viewer">
+                        <div class="comparison-image-wrap">
+                            <img id="original-image" class="comparison-img" alt="Original image">
+                            <div class="comparison-overlay" id="comparison-overlay">
+                                <img id="compressed-image" class="comparison-img" alt="Compressed image">
+                            </div>
+                            <div class="comparison-handle" id="comparison-handle">
+                                <div class="handle-line"></div>
+                                <div class="handle-grip">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="15 18 9 12 15 6"/>
+                                    </svg>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9 18 15 12 9 6"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="comparison-label comparison-label-left">Original</div>
+                            <div class="comparison-label comparison-label-right">Compressed</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="result-actions">
+                    <button class="download-btn" id="download-jpg-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download JPEG
+                    </button>
+                    <button class="download-btn download-btn-alt" id="download-png-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download PNG
+                    </button>
+                    <button class="reset-btn" id="reset-btn">
+                        Compress Another
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Error toast -->
+        <div class="toast" id="error-toast" hidden>
+            <div class="toast-content">
+                <span class="toast-icon">⚠</span>
+                <span class="toast-message" id="toast-message"></span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <p>Intelligent colour compression, powered by clustering</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
